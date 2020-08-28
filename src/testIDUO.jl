@@ -28,8 +28,8 @@ y2[LiM2].=10
 
 #f1=CSV.open("USPSData.csv")
 #f2=CSV.open("USPSLabels.csv")
-f1 = open("G:/Code/IDUO.jl/src/USPSData.csv")
-f2 = open("G:/Code/IDUO.jl/src/USPSLabels.csv")
+f1 = open("G:/Data/USPS Data/USPSData.csv")
+f2 = open("G:/Data/USPS Data/USPSLabels.csv")
 Z3  = CSV.read(f1; header=false)
 y3  = CSV.read(f2; header=false)
 close(f1)
@@ -125,7 +125,7 @@ uni_m=sort(uni_m)
 
 tau         = 10
 max_iter    = 10  # Again we are just proving a concept...
-K           = 500
+K           = 20
 des_avg_err = 1e-5
 SA          = tau/K
 data_init   = true
