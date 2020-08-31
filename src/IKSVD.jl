@@ -1,6 +1,6 @@
 module IKSVD
 # This is an implementation of the Incremental K-SVD algorithm and is adapted
-# from Ishita Takeshi's K-SVD implementation for Juliua
+# from Ishita Takeshi's K-SVD implementation for Julia
 # The original paper:
 # IK-SVD: Dictionary Learning for Spatial Big Data via Incremental Atom Update
 export iksvd, ksvd, matching_pursuit, omp
