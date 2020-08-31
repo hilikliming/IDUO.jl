@@ -1,13 +1,8 @@
 module IKSVD
-# This is an implementation of the K-SVD algorithm.
+# This is an implementation of the Incremental K-SVD algorithm and is adapted
+# from Ishita Takeshi's K-SVD implementation for Juliua
 # The original paper:
-# K-SVD: An Algorithm for Designing Overcomplete Dictionaries
-# for Sparse Representation
-# http://www.cs.technion.ac.il/~freddy/papers/120.pdf
-
-# Variable names are based on the original paper.
-# If you try to read the code, I recommend you to see Figure 2 first.
-#
+# IK-SVD: Dictionary Learning for Spatial Big Data via Incremental Atom Update
 export iksvd, ksvd, matching_pursuit, omp
 using ProgressMeter
 using Base.Threads, Random, SparseArrays, LinearAlgebra
