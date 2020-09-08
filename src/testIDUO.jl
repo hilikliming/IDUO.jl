@@ -5,6 +5,7 @@ using Main.IKSVD
 using MLDatasets,MLBase
 using CSV, DataFrames, DelimitedFiles, Random, LinearAlgebra
 using Colors, Plots
+using Distances
 #using Gadfly
 
 subsampleData= true

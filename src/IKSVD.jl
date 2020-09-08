@@ -1,8 +1,13 @@
 module IKSVD
-# This is an implementation of the Incremental K-SVD algorithm and is adapted
-# from Ishita Takeshi's K-SVD implementation for Julia
+# This is an implementation of the K-SVD algorithm.
 # The original paper:
-# IK-SVD: Dictionary Learning for Spatial Big Data via Incremental Atom Update
+# K-SVD: An Algorithm for Designing Overcomplete Dictionaries
+# for Sparse Representation
+# http://www.cs.technion.ac.il/~freddy/papers/120.pdf
+
+# Variable names are based on the original paper.
+# If you try to read the code, I recommend you to see Figure 2 first.
+#
 export iksvd, ksvd, matching_pursuit, omp
 using ProgressMeter
 using Base.Threads, Random, SparseArrays, LinearAlgebra
@@ -146,7 +151,7 @@ function iksvd(Y::AbstractMatrix, D_old::AbstractMatrix, m_atoms::Int;
     s_errs=sort(errs,rev=true)     # sorted errors of the candidates
     i_errs=sortperm(errs,rev=true) # Indices of the highest error candidates
 
-    i_cand=i_errs[1:2*m_atoms]
+    i_cand=i_errs[1:m_atoms]
 
     ## Next we compute the entropy of the poorly represented samples
     H   =computeEntropy(X_sparse[:,i_cand])
@@ -184,17 +189,44 @@ function iksvd(Y::AbstractMatrix, D_old::AbstractMatrix, m_atoms::Int;
 
 end
 
+# function computeEntropy(X::AbstractMatrix)
+#     n,N = size(X)
+#     p   = broadcast(abs,X)
+#     for ii in 1:N
+#         p[:,ii]= p[:,ii]/sum(p[:,ii])
+#     end
+#     lp = broadcast(log,p)
+#     H = -sum(p.*lp,dims=1)
+#     return vec(H)
+# end
 function computeEntropy(X::AbstractMatrix)
     n,N = size(X)
     p   = broadcast(abs,X)
+    sp  = sum(p,dims=1)
+
+    #ps=zeros(N,1)
+    H=zeros(N,1)
     for ii in 1:N
-        p[:,ii]= p[:,ii]/sum(p[:,ii])
+        pC=p[:,ii]/sp[ii]
+        idx_nz= .!in.(pC,[0])
+        if isempty(idx_nz)
+            H[ii]=0
+        else
+            H[ii]=-sum(pC[idx_nz].*broadcast(log,pC[idx_nz]))
+        end
+        # pt= p[:,ii]/sum(p[:,ii])
+        # p[:,ii]=pt
     end
-    lp = broadcast(log,p)
-    H = sum(p.*lp,dims=1)
+    # display(p)
+    # lp = broadcast(log,p)
+    # display(lp)
+    # H = -sum(p.*lp,dims=1)
+    if any(isnan,H)
+        display("NaN detected in Entropy Computation")
+        #pt=ones(size(pt))*1/(length(pt)^4)
+    end
     return vec(H)
 end
-
 
 """
     ksvd(Y::AbstractMatrix, n_atoms::Int;

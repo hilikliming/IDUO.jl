@@ -73,34 +73,71 @@ end
 function iduo(Y::AbstractMatrix, D_old::AbstractMatrix, m_atoms::Int;
               max_iter::Int = default_max_iter,
               max_iter_mp::Int = default_max_iter_mp, data_init::Bool, des_avg_err::Float64)
-
+    m_atoms  = min(m_atoms,size(Y,2))
     K1       = m_atoms
-    Dknews   = IKSVD_atom_init(Y,D_old,max_iter_mp,des_avg_err,m_atoms)
+    #Dknews   = IKSVD_atom_init(Y,D_old,max_iter_mp,des_avg_err,m_atoms)
     n, N     = size(Y)
     X_sparse = zeros(1,1)
     Dnew     = zeros(1,1)
+    Y_used_ind=zeros(size(Y,2),1)
+    t_int     = false
     for atom in 1:K1
         display(string("Solving Atom No. ",atom))
         J       = 0
-        dKp1    = Dknews[:,atom]
-        Dnew    = cat(D_old,dKp1,dims=2)
+        dKp1    = zeros(size(Y,1),1)
+        X_sparse= zeros(size(D_old,2)+1,size(Y,2))
+        pRx     = 0
 
-        # Run Fast OMP on the new data using Dnew to get R and X_Kp1(0)
-        X_sparse    = omp(Y,Dnew,max_iter_mp,des_avg_err)
+        while (sum(X_sparse[end,:])==0 || pRx==0)
+            dKp1,indY    = IKSVD_atom_init(Y,D_old,max_iter_mp,des_avg_err,1)
+            dKind        = randperm(size(dKp1,2))[1]
+            dKp1[:,dKind]#dKp1=dKp1[:,1]#dKp1[:,dKind]#Dknews[:,atom]#
+            #display(dKp1)
+            # Run Fast OMP on the new data using Dnew to get R and X_Kp1(0)
+            Dt=cat(D_old,dKp1,dims=2)
+            X_sparse    = omp(Y,Dt,max_iter_mp,des_avg_err)
+            R           = Y-Dt*X_sparse
+            Rx=R*X_sparse[end,:]
+            pRx=sqrt(Rx'*Rx)
+            if pRx==0
+                #display(Y)
+                keep_ind= .!in.(indY,1:size(Y,2))
+                Y=Y[:,keep_ind]
+                display("Dropping Bad Sample and Re-trying IM selection")
+            end
+        end
+        Dnew        = cat(D_old,dKp1,dims=2)
         R           = Y-Dnew*X_sparse
         eps1=1e-8
         ip=1
-        Jmax=20
+        Jmax=10
         while ip>eps1 && J<=Jmax
             J=J+1
             Rx=R*X_sparse[end,:]
             Dlast=Dnew[:,end]
-            Dnew[:,end]=Rx/sqrt(Rx'*Rx)
-            X_sparse[end,:]= R'*Dnew[:,end]
-            ip=1-abs(Dlast'*Dnew[:,end])
-            Xs=reshape(X_sparse[end,:],1,N)
-            ds=reshape(Dnew[:,end],n,1)#convert(Array{Float64,2},Dnew[:,end])
-            #R = R-ds*Xs
+            pRx=sqrt(Rx'*Rx)
+            #display(string("pRx: ", pRx))
+            Dnew[:,end]=Rx/pRx
+            if any(isnan,Dnew)
+                display(string("NaN detected at atom: " ,atom," Iteration: ",J))
+                display("It is likely either sparsity factor is too small, K1 is too large, or you do not have enough samples. Replacing with ones vector...")
+                display("Stopping Training Early...")
+                Dnew=D_old
+                X_sparse=X_sparse[1:end-1,:]
+                t_int=true
+                break
+                #Dnew[:,end]=ones(size(Dnew,1),1)/sqrt(size(Dnew,1))
+            end
+            if t_int
+                break
+            else
+                X_sparse[end,:]= R'*Dnew[:,end]
+                ip=1-abs(Dlast'*Dnew[:,end])
+                #Xs=reshape(X_sparse[end,:],1,N)
+                #ds=reshape(Dnew[:,end],n,1)#convert(Array{Float64,2},Dnew[:,end])
+                #R = R-ds*Xs
+            end
+
         end
         D_old=Dnew
     end
@@ -109,6 +146,14 @@ function iduo(Y::AbstractMatrix, D_old::AbstractMatrix, m_atoms::Int;
 end
 
 function IKSVD_atom_init(Y::AbstractMatrix,D_old::AbstractMatrix,max_iter_mp::Int,des_avg_err::Float64,m_atoms::Int)
+    # Drop any all zero columns
+    #pwr=sum(Y.^2,dims=1)
+    #drop_ind = in.(pwr, [0,NaN])
+    #display(string("Dropping ",sum(drop_ind)," Samples from Y..."))
+    #keep_ind= 1:size(Y,2)
+    #keep_ind[drop_ind].=[]
+    #Y=Y[:,.!drop_ind]
+
     X_sparse    = omp(Y, D_old, max_iter_mp, des_avg_err)
     EY   = Y-D_old*X_sparse
     errs = diag(EY'EY) # Diagonal of gram is the vector of individual samples SqErr in representaiton
@@ -116,24 +161,53 @@ function IKSVD_atom_init(Y::AbstractMatrix,D_old::AbstractMatrix,max_iter_mp::In
     s_errs=sort(errs,rev=true)     # sorted errors of the candidates
     i_errs=sortperm(errs,rev=true) # Indices of the highest error candidates
 
-    max_cand=min(2*m_atoms,length(i_errs))
-    i_cand=i_errs[1:max_cand]
+    i_cand=i_errs[1:m_atoms]
 
     ## Next we compute the entropy of the poorly represented samples
     H   =computeEntropy(X_sparse[:,i_cand])
+    # Ignore NaN entries by replacing with smallest value
+    for ii in 1:length(H)
+        if isnan(H[ii])
+            #display("NaN Value Removed During Entropy Computation")
+            H[ii]=-Inf
+        end
+    end
+    # finding indices of samples with largest entropy of info
     i_H =sortperm(H,rev=true)
     ## select m_atoms samples with highest entropy (16) should be an argmax in the paper...
+    #display(i_H)
+    #display(i_cand)
+    #display(H[i_H])
     Dnew = Y[:,i_cand[i_H[1:m_atoms]]]
+    return Dnew.*Dnew[1,1],i_cand[i_H[1:m_atoms]] # Multiply through sign of first element
 end
 
 function computeEntropy(X::AbstractMatrix)
     n,N = size(X)
     p   = broadcast(abs,X)
+    sp  = sum(p,dims=1)
+
+    #ps=zeros(N,1)
+    H=zeros(N,1)
     for ii in 1:N
-        p[:,ii]= p[:,ii]/sum(p[:,ii])
+        pC=p[:,ii]/sp[ii]
+        idx_nz= .!in.(pC,[0])
+        if isempty(idx_nz)
+            H[ii]=0
+        else
+            H[ii]=-sum(pC[idx_nz].*broadcast(log,pC[idx_nz]))
+        end
+        # pt= p[:,ii]/sum(p[:,ii])
+        # p[:,ii]=pt
     end
-    lp = broadcast(log,p)
-    H = sum(p.*lp,dims=1)
+    # display(p)
+    # lp = broadcast(log,p)
+    # display(lp)
+    # H = -sum(p.*lp,dims=1)
+    if any(isnan,H)
+        display("NaN detected in Entropy Computation")
+        #pt=ones(size(pt))*1/(length(pt)^4)
+    end
     return vec(H)
 end
 
